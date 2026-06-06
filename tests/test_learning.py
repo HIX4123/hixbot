@@ -38,6 +38,20 @@ class FakeIndexer:
         return 1
 
 
+class FakePersonaUpdater:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls = 0
+        self.message_ids: list[list[int]] = []
+
+    async def update_from_messages(self, messages) -> bool:
+        self.calls += 1
+        self.message_ids.append([message.id for message in messages])
+        if self.fail:
+            raise RuntimeError("persona boom")
+        return True
+
+
 class FakeChannel:
     def __init__(
         self,
@@ -95,6 +109,7 @@ class LearnRunnerTests(unittest.IsolatedAsyncioTestCase):
         wiki: WikiManager,
         chat: FakeChat,
         indexer: FakeIndexer,
+        persona_updater: FakePersonaUpdater | None = None,
     ) -> LearnRunner:
         return LearnRunner(
             store=store,
@@ -106,6 +121,7 @@ class LearnRunnerTests(unittest.IsolatedAsyncioTestCase):
                 sleep_seconds=0,
                 history_ttl_seconds=10,
             ),
+            persona_updater=persona_updater,
         )
 
     async def test_stop_then_start_resumes_after_saved_cursor(self) -> None:
@@ -241,6 +257,42 @@ class LearnRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(store.get_learn_last_message_id(1, 10), 2)
             self.assertEqual(store.get_learn_job(1).wiki_summaries, 0)
             self.assertEqual(indexer.indexed, 0)
+            store.close()
+
+    async def test_history_learning_updates_persona_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.make_store(tmp)
+            wiki = WikiManager(Path(tmp))
+            persona_updater = FakePersonaUpdater()
+            channel = FakeChannel(10, [1, 2])
+            runner = self.make_runner(
+                store=store,
+                wiki=wiki,
+                chat=FakeChat(),
+                indexer=FakeIndexer(),
+                persona_updater=persona_updater,
+            )
+            await runner.run_guild(1, [channel])
+            self.assertEqual(persona_updater.calls, 1)
+            self.assertEqual(persona_updater.message_ids, [[1, 2]])
+            store.close()
+
+    async def test_persona_update_failure_does_not_fail_history_learning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.make_store(tmp)
+            wiki = WikiManager(Path(tmp))
+            channel = FakeChannel(10, [1, 2])
+            runner = self.make_runner(
+                store=store,
+                wiki=wiki,
+                chat=FakeChat(),
+                indexer=FakeIndexer(),
+                persona_updater=FakePersonaUpdater(fail=True),
+            )
+            with self.assertLogs("hixbot.learning", level="WARNING"):
+                await runner.run_guild(1, [channel])
+            self.assertEqual(store.get_learn_last_message_id(1, 10), 2)
+            self.assertEqual(store.get_learn_job(1).status, "completed")
             store.close()
 
 

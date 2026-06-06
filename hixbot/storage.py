@@ -5,7 +5,7 @@ import threading
 import time
 from pathlib import Path
 
-from .models import BufferedMessage, ChannelPolicy, LearnChannelProgress, LearnJob
+from .models import BufferedMessage, ChannelPolicy, LearnChannelProgress, LearnJob, PersonaProfile
 
 
 def now_ts() -> int:
@@ -129,6 +129,13 @@ class SQLiteStore:
 
                 CREATE INDEX IF NOT EXISTS idx_learn_message_buffer_expires_at
                 ON learn_message_buffer (expires_at);
+
+                CREATE TABLE IF NOT EXISTS persona_profile (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    profile_markdown TEXT NOT NULL,
+                    message_count INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
                 """
             )
             self._connection.commit()
@@ -680,6 +687,56 @@ class SQLiteStore:
             self._connection.commit()
             return cursor.rowcount
 
+    def get_persona_profile(self) -> PersonaProfile | None:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT profile_markdown, message_count, updated_at
+                FROM persona_profile
+                WHERE id = 1
+                """
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_persona_profile(row)
+
+    def save_persona_profile(
+        self,
+        profile_markdown: str,
+        *,
+        message_count_delta: int,
+        updated_at: int | None = None,
+    ) -> PersonaProfile:
+        profile_markdown = profile_markdown.strip()
+        if not profile_markdown:
+            raise ValueError("profile_markdown must not be empty")
+        if message_count_delta < 0:
+            raise ValueError("message_count_delta must not be negative")
+        timestamp = now_ts() if updated_at is None else updated_at
+        with self._lock:
+            self._connection.execute(
+                """
+                INSERT INTO persona_profile (id, profile_markdown, message_count, updated_at)
+                VALUES (1, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    profile_markdown = excluded.profile_markdown,
+                    message_count = persona_profile.message_count + excluded.message_count,
+                    updated_at = excluded.updated_at
+                """,
+                (profile_markdown, message_count_delta, timestamp),
+            )
+            self._connection.commit()
+        profile = self.get_persona_profile()
+        if profile is None:
+            raise RuntimeError("persona profile was not saved")
+        return profile
+
+    def reset_persona_profile(self) -> bool:
+        with self._lock:
+            cursor = self._connection.execute("DELETE FROM persona_profile WHERE id = 1")
+            self._connection.commit()
+            return cursor.rowcount > 0
+
     @staticmethod
     def _row_to_message(row: sqlite3.Row) -> BufferedMessage:
         return BufferedMessage(
@@ -722,5 +779,13 @@ class SQLiteStore:
             ),
             completed_at=int(row["completed_at"]) if row["completed_at"] is not None else None,
             last_error=str(row["last_error"]) if row["last_error"] is not None else None,
+            updated_at=int(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _row_to_persona_profile(row: sqlite3.Row) -> PersonaProfile:
+        return PersonaProfile(
+            profile_markdown=str(row["profile_markdown"]),
+            message_count=int(row["message_count"]),
             updated_at=int(row["updated_at"]),
         )

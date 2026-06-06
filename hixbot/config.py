@@ -31,6 +31,7 @@ def _parse_guild_ids(value: str | None) -> tuple[int, ...]:
 class Settings:
     discord_token: str
     discord_guild_ids: tuple[int, ...]
+    bot_owner_ids: tuple[int, ...]
     data_dir: Path
     primary_provider: str
     fallback_provider: str | None
@@ -59,6 +60,7 @@ class Settings:
         return cls(
             discord_token=token,
             discord_guild_ids=_parse_guild_ids(os.getenv("DISCORD_GUILD_IDS")),
+            bot_owner_ids=_parse_guild_ids(os.getenv("BOT_OWNER_IDS")),
             data_dir=Path(os.getenv("DATA_DIR", "./data")).expanduser(),
             primary_provider=os.getenv("PRIMARY_PROVIDER", "ollama").strip().lower(),
             fallback_provider=fallback,
@@ -83,3 +85,6 @@ class Settings:
     def require_token(self) -> None:
         if not self.discord_token:
             raise RuntimeError("DISCORD_TOKEN is required")
+
+    def is_bot_owner(self, user_id: int) -> bool:
+        return user_id in self.bot_owner_ids

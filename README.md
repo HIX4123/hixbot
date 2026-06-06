@@ -23,6 +23,8 @@ Qdrant 검색을 기반으로 서버 단위 Markdown Wiki를 관리합니다.
   - `/hix wiki search`
   - `/hix wiki export`
   - `/hix wiki delete`
+  - `/hix persona status`
+  - `/hix persona reset`
 
 ## 스택 선택
 
@@ -89,6 +91,7 @@ Wiki 작성 구조는 [docs/wiki-structure.md](docs/wiki-structure.md)에 정리
 권장:
 
 - `DISCORD_GUILD_IDS`: 명령어 동기화를 빠르게 하기 위한 쉼표 구분 guild ID 목록.
+- `BOT_OWNER_IDS`: 전역 Hixbot 성격 프로필을 조회/초기화할 수 있는 쉼표 구분 Discord user ID 목록.
 - `OLLAMA_BASE_URL`: 기본값은 `http://localhost:11434`.
 - `OLLAMA_CHAT_MODEL`: 기본값은 `qwen2.5:7b-instruct`.
 - `OLLAMA_EMBED_MODEL`: 기본값은 `nomic-embed-text`.
@@ -106,8 +109,8 @@ Wiki 작성 구조는 [docs/wiki-structure.md](docs/wiki-structure.md)에 정리
 
 Hixbot은 Discord 원문 메시지를 영구 저장하지 않습니다. 봇이 답변하고
 요약할 수 있도록 최근 메시지만 TTL이 있는 SQLite 버퍼에 저장한 뒤,
-서버 Wiki 요약만 Markdown으로 남깁니다. 운영자는 슬래시 명령어로 Wiki
-내용을 내보내거나 삭제할 수 있습니다.
+서버 Wiki 요약과 전역 성격 프로필 요약만 남깁니다. 운영자는 슬래시 명령어로 Wiki
+내용을 내보내거나 삭제할 수 있고, 봇 소유자는 전역 성격 프로필을 조회하거나 초기화할 수 있습니다.
 
 ## 과거 대화 학습
 

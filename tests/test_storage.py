@@ -87,6 +87,34 @@ class SQLiteStoreTests(unittest.TestCase):
             self.assertEqual(store.purge_expired_learn_messages(), 1)
             store.close()
 
+    def test_persona_profile_save_accumulates_and_resets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.make_store(tmp)
+            self.assertIsNone(store.get_persona_profile())
+
+            first = store.save_persona_profile(
+                "첫 전역 성격",
+                message_count_delta=3,
+                updated_at=100,
+            )
+            self.assertEqual(first.profile_markdown, "첫 전역 성격")
+            self.assertEqual(first.message_count, 3)
+            self.assertEqual(first.updated_at, 100)
+
+            second = store.save_persona_profile(
+                "둘째 전역 성격",
+                message_count_delta=2,
+                updated_at=120,
+            )
+            self.assertEqual(second.profile_markdown, "둘째 전역 성격")
+            self.assertEqual(second.message_count, 5)
+            self.assertEqual(second.updated_at, 120)
+
+            self.assertTrue(store.reset_persona_profile())
+            self.assertIsNone(store.get_persona_profile())
+            self.assertFalse(store.reset_persona_profile())
+            store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

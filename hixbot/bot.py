@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Literal
 
 from .config import Settings
 from .learning import LearnChannelSource, LearnChannelUnavailable, LearnRunConfig, LearnRunner
 from .models import LearnSourceMessage
+from .persona import PersonaProfileUpdater
 from .policy import ResponsePolicyEngine
 from .prompts import build_reply_messages, build_summary_messages
 from .providers import build_chat_provider, build_embedding_provider
@@ -48,6 +50,7 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
         self.wiki = WikiManager(settings.data_dir)
         self.retriever = QdrantRetriever(settings.qdrant_url, settings.qdrant_collection_prefix)
         self.indexer = WikiIndexer(self.wiki, self.retriever, self.embeddings)
+        self.persona_updater = PersonaProfileUpdater(store=self.store, chat=self.chat)
         self.policy_engine = ResponsePolicyEngine()
         self._summary_task: asyncio.Task[None] | None = None
         self._learn_tasks: dict[int, asyncio.Task[None]] = {}
@@ -151,9 +154,11 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
         except Exception as exc:
             LOGGER.warning("Wiki retrieval failed: %s", exc)
             retrieved = []
+        persona_profile = self.store.get_persona_profile()
         messages = build_reply_messages(
             recent_messages=recent,
             wiki_context=format_retrieved_context(retrieved),
+            persona_profile=persona_profile.profile_markdown if persona_profile else None,
             current_author=message.author.display_name,
             current_message=content,
         )
@@ -185,21 +190,24 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
         )
         summary = result.content.strip()
         max_id = max(message.id for message in messages)
-        if summary == "NO_SUMMARY":
-            self.store.mark_summarized(guild_id, max_id)
-            return
-        channel_ids = {message.channel_id for message in messages}
-        self.wiki.append_summary(guild_id, summary, channel_ids=channel_ids)
+        if summary != "NO_SUMMARY":
+            channel_ids = {message.channel_id for message in messages}
+            self.wiki.append_summary(guild_id, summary, channel_ids=channel_ids)
+            try:
+                await self.indexer.reindex_guild(guild_id)
+            except Exception as exc:
+                LOGGER.warning("Wiki reindex failed: %s", exc)
         try:
-            await self.indexer.reindex_guild(guild_id)
+            await self.persona_updater.update_from_messages(messages)
         except Exception as exc:
-            LOGGER.warning("Wiki reindex failed: %s", exc)
+            LOGGER.warning("Persona profile update failed during summary: %s", exc)
         self.store.mark_summarized(guild_id, max_id)
 
     def _register_commands(self) -> None:
         hix = app_commands.Group(name="hix", description="Hixbot controls")
         wiki = app_commands.Group(name="wiki", description="Server Wiki controls")
         learn = app_commands.Group(name="learn", description="과거 대화 학습")
+        persona = app_commands.Group(name="persona", description="전역 Hixbot 성격 프로필")
 
         @hix.command(name="status", description="Show Hixbot component status.")
         async def status(interaction: "discord.Interaction") -> None:
@@ -317,6 +325,7 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
                 wiki=self.wiki,
                 indexer=self.indexer,
                 config=config,
+                persona_updater=self.persona_updater,
             )
             task = asyncio.create_task(runner.run_guild(guild_id, sources))
             task.add_done_callback(lambda done_task, gid=guild_id: self._on_learn_task_done(gid, done_task))
@@ -419,8 +428,53 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
             )
             await interaction.followup.send(f"{deleted}개 Wiki 항목을 삭제했어요.", ephemeral=True)
 
+        @persona.command(name="status", description="Show the global Hixbot persona profile.")
+        async def persona_status(interaction: "discord.Interaction") -> None:
+            if not self.settings.is_bot_owner(int(interaction.user.id)):
+                await interaction.response.send_message(
+                    "봇 소유자만 전역 성격 프로필을 볼 수 있어요. `BOT_OWNER_IDS`를 확인해 주세요.",
+                    ephemeral=True,
+                )
+                return
+            profile = self.store.get_persona_profile()
+            if profile is None:
+                await interaction.response.send_message(
+                    "아직 학습된 전역 Hixbot 성격 프로필이 없어요.",
+                    ephemeral=True,
+                )
+                return
+            text = (
+                f"반영 메시지 수: {profile.message_count}\n"
+                f"갱신 시각: {self._format_timestamp(profile.updated_at)}\n\n"
+                f"{profile.profile_markdown}"
+            )
+            if len(text) > 1900:
+                text = text[:1897] + "..."
+            await interaction.response.send_message(text, ephemeral=True)
+
+        @persona.command(name="reset", description="Reset the global Hixbot persona profile.")
+        async def persona_reset(interaction: "discord.Interaction") -> None:
+            if not self.settings.is_bot_owner(int(interaction.user.id)):
+                await interaction.response.send_message(
+                    "봇 소유자만 전역 성격 프로필을 초기화할 수 있어요. `BOT_OWNER_IDS`를 확인해 주세요.",
+                    ephemeral=True,
+                )
+                return
+            deleted = self.store.reset_persona_profile()
+            self.store.append_audit(
+                guild_id=int(interaction.guild.id) if interaction.guild else None,
+                actor_id=int(interaction.user.id),
+                action="persona_reset",
+                detail=f"deleted={deleted}",
+            )
+            await interaction.response.send_message(
+                "전역 Hixbot 성격 프로필을 초기화했어요." if deleted else "초기화할 전역 성격 프로필이 없어요.",
+                ephemeral=True,
+            )
+
         hix.add_command(wiki)
         hix.add_command(learn)
+        hix.add_command(persona)
         self.tree.add_command(hix)
 
     def _build_learn_sources(self, guild: "discord.Guild") -> tuple[list[LearnChannelSource], int]:
@@ -462,6 +516,10 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
             ]
         )
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_timestamp(timestamp: int) -> str:
+        return datetime.fromtimestamp(timestamp, timezone.utc).replace(microsecond=0).isoformat()
 
     def _on_learn_task_done(self, guild_id: int, task: asyncio.Task[None]) -> None:
         if self._learn_tasks.get(guild_id) is task:

@@ -18,7 +18,7 @@ Qdrant Docker 볼륨
 
 - `DATA_DIR`는 기본값이 `./data`인 로컬 데이터 디렉터리입니다.
 - `hixbot.sqlite3`는 원문 영구 보관소가 아니라 설정, 임시 메시지 버퍼,
-  요약 기준점, 음소거, 감사 로그를 저장합니다.
+  요약 기준점, 음소거, 감사 로그, 전역 성격 프로필을 저장합니다.
 - `wiki/<guild_id>/server.md`는 서버별 LLM Wiki 본문입니다.
 - Qdrant 컬렉션은 `server.md`의 Wiki 조각을 임베딩한 벡터 검색
   인덱스입니다.
@@ -116,6 +116,7 @@ flowchart TD
 - `start`는 항상 이어서 시작합니다. 이미 처리한 cursor 이전 메시지는 다시 요약하지 않습니다.
 - `stop`은 현재 batch를 마친 뒤 멈추며, `learn_channel_progress`는 삭제하지 않습니다.
 - 처음부터 다시 학습하는 reset 기능은 현재 범위에 없습니다.
+- 같은 batch는 Wiki 요약과 별도로 전역 Hixbot 성격 프로필 업데이트에도 사용됩니다.
 
 ## 검색과 답변 흐름
 
@@ -132,6 +133,7 @@ flowchart TD
 
 - 검색 대상은 `server.md`에서 추출된 Wiki 조각입니다.
 - 검색 결과는 LLM 프롬프트의 Wiki 맥락으로 들어갑니다.
+- SQLite의 전역 성격 프로필이 있으면 모든 서버 답변의 Hixbot 말투 가이드로 함께 들어갑니다.
 - Qdrant 또는 임베딩이 실패하면 Wiki 검색 없이 최근 대화만으로 답변을 시도합니다.
 
 ## SQLite와 Qdrant 역할 구분
@@ -146,6 +148,7 @@ flowchart TD
 | SQLite `learn_jobs` | 과거 대화 학습 작업 상태 | 해당 없음 |
 | SQLite `learn_channel_progress` | 채널별 마지막 학습 cursor | 해당 없음 |
 | SQLite `learn_message_buffer` | 과거 대화 학습용 TTL 원문 버퍼 | 아니오 |
+| SQLite `persona_profile` | 모든 서버가 공유하는 Hixbot 전역 성격 프로필 요약 | 요약만 |
 | Markdown `server.md` | 서버 장기 기억의 사람이 읽는 원본 | 요약만 |
 | Qdrant 컬렉션 | Wiki 요약 조각의 벡터 검색 인덱스 | 요약만 |
 
@@ -159,3 +162,5 @@ flowchart TD
 - `/hix learn start`: 저장된 cursor 이후부터 과거 대화 학습을 이어서 시작합니다.
 - `/hix learn status`: 과거 대화 학습 상태와 마지막 cursor를 확인합니다.
 - `/hix learn stop`: 진행 위치를 유지한 채 현재 batch 이후 과거 대화 학습을 멈춥니다.
+- `/hix persona status`: 봇 소유자가 전역 Hixbot 성격 프로필을 확인합니다.
+- `/hix persona reset`: 봇 소유자가 전역 Hixbot 성격 프로필을 초기화합니다.

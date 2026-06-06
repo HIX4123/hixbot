@@ -85,6 +85,13 @@ class LearnSourceMessage:
 
 
 @dataclass(frozen=True)
+class PersonaProfile:
+    profile_markdown: str
+    message_count: int
+    updated_at: int
+
+
+@dataclass(frozen=True)
 class WikiChunk:
     id: str
     guild_id: int

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
 from .models import BufferedMessage, LearnSourceMessage
+from .persona import PersonaProfileUpdater
 from .prompts import build_history_learn_messages
 from .providers import ChatProvider
 from .retriever import WikiIndexer
 from .storage import SQLiteStore
 from .wiki import WikiManager
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class LearnChannelUnavailable(Exception):
@@ -46,12 +51,14 @@ class LearnRunner:
         wiki: WikiManager,
         indexer: WikiIndexer,
         config: LearnRunConfig,
+        persona_updater: PersonaProfileUpdater | None = None,
     ) -> None:
         self.store = store
         self.chat = chat
         self.wiki = wiki
         self.indexer = indexer
         self.config = config
+        self.persona_updater = persona_updater
 
     async def run_guild(self, guild_id: int, channels: Sequence[LearnChannelSource]) -> None:
         try:
@@ -158,6 +165,12 @@ class LearnRunner:
                 )
                 await self.indexer.index_chunk(chunk)
                 wrote_summary = True
+
+            if self.persona_updater is not None:
+                try:
+                    await self.persona_updater.update_from_messages(buffered)
+                except Exception as exc:
+                    LOGGER.warning("Persona profile update failed during history learning: %s", exc)
 
             self.store.mark_learn_channel_progress(guild_id, channel.id, last_raw_id)
             self.store.increment_learn_counters(
