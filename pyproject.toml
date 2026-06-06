@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hixbot"
+version = "0.1.0"
+description = "Korean LLM Discord bot with local Ollama, SQLite, Markdown Wiki, and Qdrant retrieval."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "aiohttp>=3.9,<4",
+  "discord.py>=2.4,<3",
+]
+
+[project.scripts]
+hixbot = "hixbot.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hixbot*"]
