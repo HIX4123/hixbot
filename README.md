@@ -101,6 +101,10 @@ Wiki 작성 구조는 [docs/wiki-structure.md](docs/wiki-structure.md)에 정리
 - `FALLBACK_PROVIDER`: 기본값은 `gemini`.
 - `QDRANT_URL`: 기본값은 `http://localhost:6333`.
 - `DATA_DIR`: 기본값은 `./data`.
+- `RESPONSE_CONTEXT_WINDOW_SECONDS`: 일반 메시지 응답 판단에 사용할 최근 맥락 시간이며 기본값은 `180`.
+- `RESPONSE_CONTEXT_MIN_MESSAGES`: 일반 메시지 응답 판단에 필요한 최근 메시지 수이며 기본값은 `3`.
+- `RESPONSE_CONTEXT_MIN_AUTHORS`: 일반 메시지 응답 판단에 필요한 최근 작성자 수이며 기본값은 `2`.
+- `RESPONSE_JUDGE_MAX_CONTEXT_MESSAGES`: 판단용 LLM에 전달할 최근 맥락 최대 메시지 수이며 기본값은 `8`.
 - `LEARN_BATCH_MESSAGES`: 과거 대화 학습 batch 크기이며 기본값은 `50`.
 - `LEARN_SLEEP_SECONDS`: 과거 대화 학습 batch 사이 대기 시간이며 기본값은 `60`.
 - `LEARN_HISTORY_TTL_SECONDS`: 과거 대화 학습 원문 TTL이며 기본값은 `21600`.

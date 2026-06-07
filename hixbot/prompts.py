@@ -111,3 +111,43 @@ New conversation batch:
         ChatTurn("system", "You maintain one compact Korean Markdown persona profile for Hixbot."),
         ChatTurn("user", prompt),
     ]
+
+
+def build_response_judge_messages(
+    *,
+    recent_messages: list[BufferedMessage],
+    persona_profile: str | None,
+    current_author: str,
+    current_message: str,
+) -> list[ChatTurn]:
+    recent_text = "\n".join(
+        f"{message.author_name}: {message.content}" for message in recent_messages
+    )
+    profile_text = (
+        persona_profile.strip()
+        if persona_profile and persona_profile.strip()
+        else "No learned global persona profile yet."
+    )
+    prompt = f"""Decide whether Hixbot should naturally join this Korean Discord conversation now.
+Answer with exactly one token: RESPOND or STAY_QUIET
+
+Use RESPOND only when a short Hixbot message would feel welcome, such as:
+- the room is asking a question, recruiting, choosing what to play, joking in a way Hixbot can build on, or inviting a quick reaction
+- Hixbot can add a brief playful comment without derailing the flow
+
+Use STAY_QUIET when:
+- the current message is a lone remark, private/sensitive, venting, logistical noise, or would be awkward to interrupt
+- Hixbot would need to guess personal facts, imitate a specific person, or push into a serious conversation
+
+Global Hixbot persona profile:
+{profile_text}
+
+Recent channel context:
+{recent_text}
+
+Current message from {current_author}:
+{current_message}"""
+    return [
+        ChatTurn("system", "You are a strict response gate for Hixbot. Output only RESPOND or STAY_QUIET."),
+        ChatTurn("user", prompt),
+    ]

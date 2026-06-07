@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from hixbot.models import BufferedMessage
-from hixbot.prompts import build_persona_update_messages, build_reply_messages
+from hixbot.prompts import build_persona_update_messages, build_reply_messages, build_response_judge_messages
 
 
 class PromptTests(unittest.TestCase):
@@ -49,6 +49,28 @@ class PromptTests(unittest.TestCase):
         self.assertIn("Do not store raw message logs", content)
         self.assertIn("sensitive personal information", content)
         self.assertIn("NO_PERSONA_UPDATE", content)
+
+    def test_response_judge_prompt_requires_binary_output(self) -> None:
+        batch = [
+            BufferedMessage(
+                id=1,
+                guild_id=10,
+                channel_id=20,
+                author_id=30,
+                author_name="tester",
+                content="오늘 뭐 할까",
+                created_at=1000,
+            )
+        ]
+        messages = build_response_judge_messages(
+            recent_messages=batch,
+            persona_profile="- 드립은 짧게",
+            current_author="tester",
+            current_message="오늘 뭐 할까",
+        )
+        self.assertIn("RESPOND or STAY_QUIET", messages[1].content)
+        self.assertIn("lone remark", messages[1].content)
+        self.assertIn("Global Hixbot persona profile", messages[1].content)
 
 
 if __name__ == "__main__":

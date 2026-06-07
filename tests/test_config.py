@@ -18,6 +18,10 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.bot_owner_ids, (10, 20))
         self.assertTrue(settings.is_bot_owner(10))
         self.assertFalse(settings.is_bot_owner(30))
+        self.assertEqual(settings.response_context_window_seconds, 180)
+        self.assertEqual(settings.response_context_min_messages, 3)
+        self.assertEqual(settings.response_context_min_authors, 2)
+        self.assertEqual(settings.response_judge_max_context_messages, 8)
 
 
 if __name__ == "__main__":

@@ -110,3 +110,4 @@ class RetrievedChunk:
 class ResponseDecision:
     should_respond: bool
     reason: str
+    needs_judgment: bool = False

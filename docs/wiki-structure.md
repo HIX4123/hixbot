@@ -122,18 +122,26 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[새 Discord 메시지] --> B[Ollama 로컬 임베딩 생성]
-    B --> C[Qdrant에서 관련 Wiki 조각 검색]
-    C --> D[최근 채널 메시지와 Wiki 맥락 구성]
-    D --> E[Ollama 또는 Gemini 대체 응답으로 LLM 답변 생성]
-    E --> F{답변이 stay quiet 신호인가?}
-    F -- 예 --> G[말하지 않음]
-    F -- 아니오 --> H[Discord 채널에 답변]
+    A[새 Discord 메시지] --> B{멘션/봇 답글인가?}
+    B -- 예 --> E[답변 생성 준비]
+    B -- 아니오 --> C{쿨다운과 최근 맥락을 통과했는가?}
+    C -- 아니오 --> Z[말하지 않음]
+    C -- 예 --> D[판단용 LLM이 RESPOND/STAY_QUIET 결정]
+    D -->|STAY_QUIET| Z
+    D -->|RESPOND| E
+    E --> F[Ollama 로컬 임베딩 생성]
+    F --> G[Qdrant에서 관련 Wiki 조각 검색]
+    G --> H[최근 채널 메시지와 Wiki 맥락 구성]
+    H --> I[Ollama 또는 Gemini 대체 응답으로 LLM 답변 생성]
+    I --> J{답변이 stay quiet 신호인가?}
+    J -- 예 --> Z
+    J -- 아니오 --> K[Discord 채널에 답변]
 ```
 
 - 검색 대상은 `server.md`에서 추출된 Wiki 조각입니다.
 - 검색 결과는 LLM 프롬프트의 Wiki 맥락으로 들어갑니다.
 - SQLite의 전역 성격 프로필이 있으면 모든 서버 답변의 Hixbot 말투 가이드로 함께 들어갑니다.
+- 일반 메시지는 키워드 목록 대신 최근 대화 맥락과 판단용 LLM을 거쳐 응답 여부를 결정합니다.
 - Qdrant 또는 임베딩이 실패하면 Wiki 검색 없이 최근 대화만으로 답변을 시도합니다.
 
 ## SQLite와 Qdrant 역할 구분

@@ -20,6 +20,7 @@ class ResponsePolicyEngine:
         is_muted: bool,
         bot_mentioned: bool,
         replied_to_bot: bool,
+        has_recent_context: bool = False,
         now: int,
     ) -> ResponseDecision:
         if author_is_bot:
@@ -33,43 +34,21 @@ class ResponsePolicyEngine:
         if is_muted:
             return ResponseDecision(False, "muted")
 
-        bypass_cooldown = bot_mentioned or replied_to_bot
-        key = (guild_id, channel_id)
-        last_response = self.channel_last_response_at.get(key, 0)
-        if not bypass_cooldown and now - last_response < channel_policy.cooldown_seconds:
-            return ResponseDecision(False, "cooldown")
-
         if bot_mentioned:
             return ResponseDecision(True, "mentioned")
         if replied_to_bot:
             return ResponseDecision(True, "reply thread")
-        if self._looks_interactive(content):
-            return ResponseDecision(True, "interactive message")
-        return ResponseDecision(False, "not worth interrupting")
+
+        key = (guild_id, channel_id)
+        last_response = self.channel_last_response_at.get(key, 0)
+        if now - last_response < channel_policy.cooldown_seconds:
+            return ResponseDecision(False, "cooldown")
+
+        if not channel_policy.remember_enabled:
+            return ResponseDecision(False, "context unavailable")
+        if not has_recent_context:
+            return ResponseDecision(False, "not enough recent context")
+        return ResponseDecision(False, "semantic judgment", needs_judgment=True)
 
     def record_response(self, *, guild_id: int, channel_id: int, now: int) -> None:
         self.channel_last_response_at[(guild_id, channel_id)] = now
-
-    @staticmethod
-    def _looks_interactive(content: str) -> bool:
-        stripped = content.strip()
-        if len(stripped) < 4:
-            return False
-        if stripped.endswith("?") or stripped.endswith("？"):
-            return True
-        korean_triggers = (
-            "할까",
-            "하실",
-            "하냐",
-            "하자",
-            "갈까",
-            "ㄱㄱ",
-            "추천",
-            "어때",
-            "누구",
-            "몇시",
-            "모집",
-            "파티",
-        )
-        lowered = stripped.lower()
-        return any(trigger in lowered for trigger in korean_triggers)

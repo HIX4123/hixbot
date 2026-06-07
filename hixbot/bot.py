@@ -7,12 +7,13 @@ from typing import Literal
 
 from .config import Settings
 from .learning import LearnChannelSource, LearnChannelUnavailable, LearnRunConfig, LearnRunner
-from .models import LearnSourceMessage
+from .models import BufferedMessage, LearnSourceMessage
 from .persona import PersonaProfileUpdater
 from .policy import ResponsePolicyEngine
 from .prompts import build_reply_messages, build_summary_messages
 from .providers import build_chat_provider, build_embedding_provider
 from .retriever import QdrantRetriever, WikiIndexer
+from .response_judge import ResponseJudge
 from .storage import SQLiteStore, now_ts
 from .wiki import WikiManager, format_retrieved_context
 
@@ -51,6 +52,7 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
         self.retriever = QdrantRetriever(settings.qdrant_url, settings.qdrant_collection_prefix)
         self.indexer = WikiIndexer(self.wiki, self.retriever, self.embeddings)
         self.persona_updater = PersonaProfileUpdater(store=self.store, chat=self.chat)
+        self.response_judge = ResponseJudge(chat=self.chat)
         self.policy_engine = ResponsePolicyEngine()
         self._summary_task: asyncio.Task[None] | None = None
         self._learn_tasks: dict[int, asyncio.Task[None]] = {}
@@ -86,6 +88,7 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
         guild_id = int(message.guild.id)
         channel_id = int(message.channel.id)
         policy = self.store.resolve_channel_policy(guild_id, channel_id)
+        current_ts = now_ts()
 
         if message.author.bot:
             return
@@ -98,10 +101,12 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
                 author_id=int(message.author.id),
                 author_name=message.author.display_name,
                 content=content,
+                created_at=current_ts,
             )
 
         bot_mentioned = any(user.id == self.user.id for user in message.mentions)
         replied_to_bot = bool(message.reference and message.reference.resolved and getattr(message.reference.resolved.author, "id", None) == self.user.id)
+        recent_for_judge = self._recent_response_context(guild_id, channel_id, at=current_ts) if policy.remember_enabled and content else []
         decision = self.policy_engine.decide(
             guild_id=guild_id,
             channel_id=channel_id,
@@ -111,9 +116,20 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
             is_muted=self.store.is_muted(guild_id, channel_id),
             bot_mentioned=bot_mentioned,
             replied_to_bot=replied_to_bot,
-            now=now_ts(),
+            has_recent_context=self._has_recent_response_context(recent_for_judge, now=current_ts),
+            now=current_ts,
         )
-        if not decision.should_respond:
+        if decision.needs_judgment:
+            persona_profile = self.store.get_persona_profile()
+            should_respond = await self.response_judge.should_respond(
+                recent_messages=recent_for_judge,
+                persona_profile=persona_profile.profile_markdown if persona_profile else None,
+                current_author=message.author.display_name,
+                current_message=content,
+            )
+            if not should_respond:
+                return
+        elif not decision.should_respond:
             return
 
         try:
@@ -164,6 +180,30 @@ class HixbotClient(_DiscordClientBase):  # type: ignore[misc, valid-type]
         )
         result = await self.chat.complete(messages, temperature=0.8, max_tokens=512)
         return result.content
+
+    def _recent_response_context(
+        self,
+        guild_id: int,
+        channel_id: int,
+        *,
+        at: int,
+    ) -> list[BufferedMessage]:
+        limit = max(
+            self.settings.response_judge_max_context_messages,
+            self.settings.response_context_min_messages,
+        )
+        recent = self.store.recent_messages(guild_id, channel_id, limit=limit, at=at)
+        window_start = at - self.settings.response_context_window_seconds
+        return [message for message in recent if message.created_at >= window_start]
+
+    def _has_recent_response_context(self, messages: list[BufferedMessage], *, now: int) -> bool:
+        window_start = now - self.settings.response_context_window_seconds
+        recent = [message for message in messages if message.created_at >= window_start]
+        author_ids = {message.author_id for message in recent}
+        return (
+            len(recent) >= self.settings.response_context_min_messages
+            and len(author_ids) >= self.settings.response_context_min_authors
+        )
 
     async def _summary_loop(self) -> None:
         while True:

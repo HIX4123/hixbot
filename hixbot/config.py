@@ -48,6 +48,10 @@ class Settings:
     max_context_messages: int
     default_reply_cooldown_seconds: int
     max_response_chars: int
+    response_context_window_seconds: int
+    response_context_min_messages: int
+    response_context_min_authors: int
+    response_judge_max_context_messages: int
     learn_batch_messages: int
     learn_sleep_seconds: int
     learn_history_ttl_seconds: int
@@ -77,6 +81,10 @@ class Settings:
             max_context_messages=_parse_int("MAX_CONTEXT_MESSAGES", 20),
             default_reply_cooldown_seconds=_parse_int("DEFAULT_REPLY_COOLDOWN_SECONDS", 45),
             max_response_chars=_parse_int("MAX_RESPONSE_CHARS", 1800),
+            response_context_window_seconds=_parse_int("RESPONSE_CONTEXT_WINDOW_SECONDS", 180),
+            response_context_min_messages=_parse_int("RESPONSE_CONTEXT_MIN_MESSAGES", 3),
+            response_context_min_authors=_parse_int("RESPONSE_CONTEXT_MIN_AUTHORS", 2),
+            response_judge_max_context_messages=_parse_int("RESPONSE_JUDGE_MAX_CONTEXT_MESSAGES", 8),
             learn_batch_messages=_parse_int("LEARN_BATCH_MESSAGES", 50),
             learn_sleep_seconds=_parse_int("LEARN_SLEEP_SECONDS", 60),
             learn_history_ttl_seconds=_parse_int("LEARN_HISTORY_TTL_SECONDS", 21600),
